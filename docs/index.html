@@ -8,8 +8,8 @@
   <meta name="apple-mobile-web-app-title" content="QQ Lyrics">
   <meta name="theme-color" content="#000000">
   <meta name="mobile-web-app-capable" content="yes">
-  <link rel="manifest" href="/manifest.json">
-  <link rel="apple-touch-icon" href="/icon-192.png">
+  <link rel="manifest" href="./manifest.json">
+  <link rel="apple-touch-icon" href="./icon-192.png">
   <title>QQ 歌词 · 状态栏</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -144,7 +144,7 @@
   <script>
     // Register Service Worker for PWA
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").then(function(reg) {
+      navigator.serviceWorker.register("./sw.js").then(function(reg) {
         console.log("SW registered:", reg.scope);
       }).catch(function(err) {
         console.log("SW registration failed:", err);
