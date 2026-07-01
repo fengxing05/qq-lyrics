@@ -1,0 +1,13 @@
+{
+  "name": "qq-lyrics",
+  "version": "1.0.0",
+  "description": "QQ Music Lyrics & Translation - Phone Status Bar Display",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "axios": "^1.6.0"
+  }
+}
