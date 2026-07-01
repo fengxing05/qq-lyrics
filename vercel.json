@@ -1,23 +1,23 @@
 {
   "version": 2,
-  "builds": [
+  "headers": [
     {
-      "src": "api/server.js",
-      "use": "@vercel/node"
+      "source": "/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
+      ]
     },
     {
-      "src": "public/**",
-      "use": "@vercel/static"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "api/server.js"
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=3600, s-maxage=3600" }
+      ]
     },
     {
-      "src": "/(.*)",
-      "dest": "public/$1"
+      "source": "/(.*\\.png|.*\\.svg|.*\\.ico)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=86400" }
+      ]
     }
   ]
 }

@@ -56,17 +56,150 @@ function updateClock() {
 updateClock();
 setInterval(updateClock, 10000);
 
-// ========== API calls ==========
-async function searchSongs(keyword) {
-  const res = await fetch("/api/search?keyword=" + encodeURIComponent(keyword));
-  const data = await res.json();
-  return data.songs || [];
+// ========== JSONP helper ==========
+function jsonp(url, params, callbackName) {
+  return new Promise(function(resolve, reject) {
+    var cbName = callbackName || ("_jsonp_" + Math.random().toString(36).substr(2));
+    var timeout = setTimeout(function() {
+      cleanup();
+      reject(new Error("JSONP timeout"));
+    }, 10000);
+
+    function cleanup() {
+      clearTimeout(timeout);
+      delete window[cbName];
+      var s = document.getElementById(cbName);
+      if (s) s.remove();
+    }
+
+    window[cbName] = function(data) {
+      cleanup();
+      resolve(data);
+    };
+
+    var queryParts = [];
+    for (var key in params) {
+      if (params.hasOwnProperty(key)) {
+        queryParts.push(encodeURIComponent(key) + "=" + encodeURIComponent(params[key]));
+      }
+    }
+    queryParts.push("callback=" + cbName);
+
+    var script = document.createElement("script");
+    script.id = cbName;
+    script.src = url + "?" + queryParts.join("&");
+    script.onerror = function() {
+      cleanup();
+      reject(new Error("JSONP request failed"));
+    };
+    document.head.appendChild(script);
+  });
 }
 
-async function fetchLyrics(songMid) {
-  const res = await fetch("/api/lyrics/" + songMid);
-  const data = await res.json();
-  return data;
+// ========== API calls (JSONP direct to QQ Music) ==========
+var QQ_SEARCH_URL = "https://c.y.qq.com/splcloud/fcgi-bin/smartbox_new.fcg";
+var QQ_LYRIC_URL = "https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg";
+
+function searchSongs(keyword) {
+  return jsonp(QQ_SEARCH_URL, {
+    key: keyword,
+    format: "jsonp",
+    inCharset: "utf-8",
+    outCharset: "utf-8",
+    platform: "yqq"
+  }).then(function(data) {
+    var songs = [];
+    if (data && data.data && data.data.song && data.data.song.itemlist) {
+      data.data.song.itemlist.forEach(function(item) {
+        songs.push({
+          id: item.id,
+          mid: item.mid,
+          name: item.name,
+          singer: item.singer,
+          album: item.album || "",
+          albumMid: item.albummid || "",
+          interval: item.interval || 0
+        });
+      });
+    }
+    return songs;
+  });
+}
+
+function fetchLyrics(songMid) {
+  return jsonp(QQ_LYRIC_URL, {
+    songmid: songMid,
+    format: "jsonp",
+    platform: "yqq",
+    g_tk: 5381,
+    loginUin: 0,
+    hostUin: 0,
+    inCharset: "utf-8",
+    outCharset: "utf-8",
+    notice: 0,
+    needNewCode: 0
+  }).then(function(data) {
+    var lyricText = "";
+    var transText = "";
+
+    if (data && data.lyric) {
+      var raw = data.lyric;
+      // Detect and decode base64
+      if (/^[A-Za-z0-9+/=]+$/.test(raw.substring(0, Math.min(100, raw.length)))) {
+        try {
+          lyricText = atob(raw);
+          // atob only handles ASCII, try decodeURIComponent for UTF-8
+          try {
+            lyricText = decodeURIComponent(escape(lyricText));
+          } catch(e2) {
+            // If that fails, try manual UTF-8 decoding
+            try {
+              lyricText = utf8Decode(atob(raw));
+            } catch(e3) {}
+          }
+        } catch(e) {
+          lyricText = raw;
+        }
+      } else {
+        lyricText = raw;
+      }
+    }
+
+    if (data && data.trans && data.trans.trim()) {
+      var rawTrans = data.trans;
+      if (/^[A-Za-z0-9+/=]+$/.test(rawTrans.substring(0, Math.min(100, rawTrans.length)))) {
+        try {
+          transText = utf8Decode(atob(rawTrans));
+        } catch(e) {
+          try { transText = atob(rawTrans); } catch(e2) {}
+        }
+      } else {
+        transText = rawTrans;
+      }
+    }
+
+    return { lyric: lyricText, trans: transText };
+  });
+}
+
+// UTF-8 decode for base64-decoded strings
+function utf8Decode(str) {
+  var result = "";
+  var i = 0;
+  while (i < str.length) {
+    var c = str.charCodeAt(i);
+    if (c < 128) {
+      result += String.fromCharCode(c);
+      i++;
+    } else if (c > 191 && c < 224) {
+      result += String.fromCharCode(((c & 31) << 6) | (str.charCodeAt(i + 1) & 63));
+      i += 2;
+    } else {
+      result += String.fromCharCode(((c & 15) << 12) | ((str.charCodeAt(i + 1) & 63) << 6) | (str.charCodeAt(i + 2) & 63));
+      i += 3;
+    }
+  }
+  return result;
 }
 
 function getAlbumArtUrl(albumMid) {

@@ -7,6 +7,16 @@ const PORT = 3456;
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Helper: decode base64 lyrics from QQ Music new API
+function decodeBase64(str) {
+  if (!str || !str.trim()) return '';
+  try {
+    return Buffer.from(str, 'base64').toString('utf-8');
+  } catch (e) {
+    return str; // return as-is if not valid base64
+  }
+}
+
 // QQ Music API proxy helpers
 const QQ_API_BASE = 'https://c.y.qq.com';
 const QQ_MUSIC_BASE = 'https://u.y.qq.com';
@@ -81,53 +91,102 @@ app.get('/api/song/:mid', async (req, res) => {
   }
 });
 
-// Get lyrics (Chinese + translation)
+// Get lyrics (Chinese + translation) using QQ Music API
 app.get('/api/lyrics/:mid', async (req, res) => {
   try {
     const { mid } = req.params;
-    
-    // QQ Music lyrics endpoint
-    const url = `${QQ_API_BASE}/lyric/fcgi-bin/fcg_lyric_new.fcg`;
-    const response = await axios.get(url, {
-      params: {
-        songmid: mid,
+
+    // Try the newer u.y.qq.com API first (more reliable from overseas)
+    const url = `https://u.y.qq.com/cgi-bin/musicu.fcg`;
+    const response = await axios.post(url, {
+      comm: {
+        cv: 4747474,
+        ct: 24,
         format: 'json',
-        platform: 'yqq',
-        g_tk: 5381,
-        loginUin: 0,
-        hostUin: 0,
         inCharset: 'utf-8',
         outCharset: 'utf-8',
         notice: 0,
-        needNewCode: 0
+        platform: 'yqq.json',
+        needNewCode: 1,
+        uin: 0,
+        g_tk_new_20200403: 5381,
+        g_tk: 5381
       },
+      req_1: {
+        module: 'music.musichallSong.SongLyricInter',
+        method: 'GetPlayLyricInfo',
+        param: {
+          songMID: mid,
+          lyricsType: 0,    // 0 = original + translation
+          lyricsQrc: 1,
+          isBuy: false,
+          romAt: 0,
+          qrc: 1,
+          qrc_t: 0,
+          isFormat: 1,
+          ver: 0,
+          ts: Date.now() / 1000
+        }
+      }
+    }, {
       headers: {
         ...commonHeaders,
+        'Content-Type': 'application/json',
         'Accept': 'application/json'
       }
     });
 
     const data = response.data;
-    
     let lyricText = '';
     let transText = '';
 
-    if (data && data.lyric && data.lyric.trim()) {
-      // Decode the QQ Music lyric format (base64 decoded already by API)
-      lyricText = data.lyric;
+    // Parse the new API response format
+    if (data && data.req_1 && data.req_1.data) {
+      const lyricData = data.req_1.data;
+      // New API returns base64-encoded lyrics
+      lyricText = decodeBase64(lyricData.lyric || '');
+      transText = decodeBase64(lyricData.trans || '');
     }
-    
-    if (data && data.trans && data.trans.trim()) {
-      transText = data.trans;
+
+    // If new API returns empty, fallback to old API
+    if (!lyricText && !transText) {
+      const oldUrl = `${QQ_API_BASE}/lyric/fcgi-bin/fcg_query_lyric_new.fcg`;
+      const oldResponse = await axios.get(oldUrl, {
+        params: {
+          songmid: mid,
+          format: 'json',
+          platform: 'yqq',
+          g_tk: 5381,
+          loginUin: 0,
+          hostUin: 0,
+          inCharset: 'utf-8',
+          outCharset: 'utf-8',
+          notice: 0,
+          needNewCode: 0
+        },
+        headers: {
+          ...commonHeaders,
+          'Accept': 'application/json'
+        }
+      });
+
+      const oldData = oldResponse.data;
+      if (oldData && oldData.lyric) lyricText = oldData.lyric;
+      if (oldData && oldData.trans) transText = oldData.trans;
     }
 
     res.json({
-      lyric: lyricText,
-      trans: transText
+      lyric: lyricText || '',
+      trans: transText || ''
     });
   } catch (error) {
     console.error('Lyrics error:', error.message);
-    res.status(500).json({ error: 'Failed to get lyrics' });
+    // Return empty rather than 500 so the UI can show "no lyrics" gracefully
+    res.json({
+      lyric: '',
+      trans: '',
+      error: error.message
+    });
   }
 });
 
